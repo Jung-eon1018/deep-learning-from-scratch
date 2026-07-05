@@ -427,3 +427,61 @@ def predict(network, x):
 
     return y
 ```
+
+- 위의 세 함수를 이용하여 추론을 진행한다.
+
+```python
+x, t = get_data()
+network = init_network()
+
+accuracy_cnt = 0
+for i in range(len(x)):
+  y=predict(network,x[i])
+  p=np.argmax(y)
+  if p==t[i]:
+    accuracy_cnt+=1
+
+print("Accuracy:"+str(float(accuracy_cnt)/len(x)))
+```
+
+- 먼저 minist 데이터 셋을 얻고 네트워크를 생성한다.
+- 이후 x에 저장된 이미지 데이터를 1장씩 꺼내 predict()함수로 분류한다.
+  - 이 함수는 각 레이블의 확률을 넘파이 배열로 반환한다. [0.1,0.3,0.2 ... 0.04]와 같은 형식
+  - 여기서 배열의 인덱스 숫자일 확률이 얼마인지와 같이 해석한다.
+- np.argmax() 함수로 배열에서 값이 가장 큰 원소의 인덱스를 구하고, 이것이 바로 예측 결과이다.
+- 마지막으로는 예측한 답변과 정답 레이블을 비교하여 맟춘 개수를 세고, 이를 전체 이미지의 개수로 나누어 정확도를 구한다.
+
+- 이 예시에서는 정규화, 전처리 작업이 이루어 졌는데
+  - 정규화 : 데이터를 특정 범위로 변환하는 처리
+  - 전처리 : 신경망의 입력 데이터에 특정 변환을 가하는 작업
+    - load_mnist 함수의 인수인 normalize를 True로 설정 -> 0~255 범위 값을 0.0~1.0 범위로 변환
+  - 따라서 여기서는 입력 이미지 데이터에 대한 전처리 작업으로 정규화를 수행한 셈이다.
+
+### 3.6.3 배치 처리
+
+- 이번에는 입력 데이터와 가중치 매개변수의 '형상'에 주의 해서 이전 구현을 살펴본다.
+
+![batch](images/batch.png)
+
+- 이미지 100개를 묶어 predict()함수에 한꺼번에 입력하는 경우 100장 분량의 데이터가 한 번에 출력됨을 나타낸다.
+- 이처럼 하나로 묶은 입력 데이터를 배치(batch)라고 한다.
+
+```python
+x,t = get_data()
+network = init_network()
+
+batch_size = 100
+accuracy_cnt = 0
+
+for i in range(0,len(x),batch_size):
+  x_batch = x[i:i+batch_size]
+  y_batch = predict(network, x_batch)
+  p = np.argmax(y_batch, axis=1)
+  accuracy_cnt+=np.sum(p==t[i:i+batch_size])
+```
+
+- 여기서 batch size만큼 반복하는 이유는 batch 즉 묶음단위가 100이니까 앞에서부터 100장씩 묶어 꺼내는 것이라고 이해할 수 있다.
+
+- 그리고 argmax()라는 함수에 axis=1이라는 인수를 추가했는데 이는 100x10의 배열 중 1번째 차원을 구성하는 각 원소의 최댓값의 인덱스를 찾도록 한 것이다.
+
+- 배치처리를 이용하여 데이터를 효율적이고 빠르게 처리할 수 있다.
