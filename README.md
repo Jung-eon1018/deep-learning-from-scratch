@@ -26,7 +26,7 @@
 
 👉 [자세히 보기](./ch03_neuralnetwork/README.md)
 
-### 📘 Chapter 4 - 신경망 학습 (진행 중)
+### 📘 Chapter 4 - 신경망 학습 (완료)
 
 - [x] 4.1 데이터에서 학습한다!
 - [x] 4.2 손실 함수
@@ -36,10 +36,20 @@
 
 👉 [자세히 보기](./ch04_neuralnetwork-learning/README.md)
 
+### 📘 Chapter 5 - 오차역전파법 (진행 중)
+
+- [ ] 5.1 계산 그래프
+- [ ] 5.2 연쇄법칙
+- [ ] 5.3 역전파
+- [ ] 5.4 단순한 계층 구현하기
+- [ ] 5.5 활성화 함수 계층 구현하기
+- [ ] 5.6 Affine/Softmax 계층 구현하기
+- [ ] 5.7 오차역전파법 구현하기
+
+👉 [자세히 보기](./ch05_backpropagation/README.md)
+
 ## 🚀 목표
 
-- Chapter 3: 신경망
-- Chapter 4: 신경망 학습
 - Chapter 5: 오차역전파법
 - Chapter 6: 학습 관련 기술들
 - Chapter 7: 합성곱 신경망(CNN)
