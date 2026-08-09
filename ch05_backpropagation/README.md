@@ -127,6 +127,13 @@ class MulLayer:
         return dx,dy
 ```
 
+- 구현한 코드는 buy_apple.py에 있다.
+- 여기서 왜 MulLayer()라는 클래스를 각각 다른 객체로 만들어서 사용할까?
+  - 그 이유는 각 곱셈 노드가 본인의 입력값을 따로 기억해야 하기 때문이다.
+  - forward() 순전파에서 입력값을 객체 내부에 저장하는데, 각 객체가 기억하는 값이 다르다.
+  - 역전파에서는 이 저장된 값들을 이용해서 미분하는 것이다!
+    - 만약 역전파가 필요 없다면 각각의 객체를 만들 필요는 없다.
+
 ### 5.4.2 덧셈 계층
 
 ```python
@@ -143,3 +150,210 @@ class AddLayer:
         dy=dout*1
         return dx,dy
 ```
+
+- 구현한 코드는 buy_apple_orange.py에 있다.
+
+## 5.5 활성화 함수 계층 구현하기
+
+- 이제 계산 그래프를 신경망에 구현하는데, 여기에서는 신경망을 구성하는 층 각각을 클래스 하나로 구현한다.
+- 우선 활성화 함수인 ReLU와 Sigmoid 계층을 구현한다.
+
+### 5.5.1 ReLU 계층
+
+- ReLU 수식에서 순전파 때의 입력인 x가 0보다 크면 역전파는 상류의 값을 그대로 하류로 흘리지만 순전파 때 x가 0이면 역전파 때는 하류로 신로를 보내지 않는다.(0을 보냄)
+
+![5-5-1](images/5-5-1.png)
+
+```python
+class Relu:
+  def __init__(self):
+    self.mask = None
+
+  def forward(self,x):
+    self.mask = (x<=0)
+    out = x.copy()
+    out[self.mask]=0
+
+    return out
+
+  def backward(self,dout):
+    dout[self.mask]=0
+    dx=dout
+
+    return dx
+```
+
+- ReLU 클래스는 mask라는 인스턴스 변수를 갖는다.
+  - 이는 True/False로 구성된 넘파이 배열으로, 순전파 입력이 0이하인 인덱스는 True, 그 외는 False로 유지
+    - 그러니까 이 self.mask에는 넘파이 배열이 들어간다. 그래서 out[self.mask]=0 이라는 것의 뜻은 self.mask가 True인 위치의 값을 0으로 바꾼다는 뜻.
+  - 그래서 순전파 때 만들어둔 mask가 True이면 역전파때 이걸 사용해서 dout을 0으로 만드는 것
+    - dout은 out과 별개의 배열이지만(그래서 완전히 값이 다르고 또 순전파때와 달리 양수 값이더라도) out으로 만들어진 self.mask를 역전파에 다시 써서 그대로 적용하는 것이다.
+
+### 5.5.2 Sigmoid 계층
+
+![5-5-2](images/5-5-2.png)
+
+- 시그모이드 함수의 계산그래프는 위와 같다.
+- exp노드는 y=exp(x) 계산을 수행하고, / 노드는 y=1/x 계산을 수행한다.
+
+![5-5-3](images/5-5-3.png)
+
+- 시그모이드 역전파의 흐름
+  - /를 미분하면 -y^2 이 된다. 이를 상류에서 흘러온 값에 곱해서 하류로 전한다.
+  - +는 그대로 전달
+  - exp연산의 미분은 exp(x)이므로 이를 곱해서 전달한다. 여기서는 exp(-x)
+  - x노드는 순전파 때의 값을 서로 바꿔서 곱하므로 여기에서는 -1을 곱한다.
+
+- 간소화하면 다음과 같다.
+  ![5-5-4](images/5-5-4.png)
+
+- 위와 같이 사용하면 세세한 계산 없이 간단하게 입력과 출력에만 집중할 수 있다. 그리고 입력과 출력만으로 계산할 수 있다는 사실을 알 수 있다.
+- 하지만 식을 더 간소화할 수 있다.
+  ![5-5-5](images/5-5-5.png)
+- 위와 같이 시그모이드 계층의 역전파는 순전파의 출력만으로 계산할 수 있다.
+
+```python
+class Sigmoid:
+  def __init__(self):
+    self.out = None
+
+  def forward(self,x):
+    out = sigmoid(x) #순전파 때의 출력을 out에 보관한 후 역전파 계산 때 그 값을 사용
+    self.out = out
+    return out
+
+    def backward(self,dout):
+      dx=dout*(1.0-self.out)*self.out
+      return dx
+
+```
+
+## 5.6 Affine/Softmax 계층 구현하기
+
+### 5.6.1 Affine 계층
+
+- Affine 계층의 계산 그래프에서는 스칼라 대신 행렬이 흐른다.
+  ![5-5-6](images/5-5-6.png)
+
+- Affine 계층의 역전파를 계산 그래프로 나타내면 다음과 같다.
+  ![5-5-7](images/5-5-7.png)
+
+- X와 X를 미분한것, W와 W를 미분한 것은 같은 형상임에 주의하자.
+
+### 5.6.2 배치용 Affine 계층
+
+![5-5-8](images/5-5-8.png)
+
+- 데이터 N개를 묶어 순전파 하는 경우(배치용 Affine 계층)
+- 기존과 다른 부분은 입력인 X의 형상이 (N,2)가 된 것이다.
+  - 역전파 때는 행렬의 형상에 주의하면 이전과 같이 도출할 수 있다.
+
+- 편향을 더할 때에도 주의해야 하는데 순전파 때의 편향 덧셈음 각 데이터(N개의 데이터에 각각) 더해진다.
+  - 예를 들어 N=2일때 이런식으로 두 데이터 각각의 계산 결과에 더해진다.
+
+  ```python
+  import numpy as np
+
+  X_dot_W = np.array([[0,0,0], [10,10,10]])
+  B = np.array([1,2,3])
+
+  print(X_dot_W)
+  print(X_dot_W + B)
+
+  >>>
+  [[ 0  0  0]
+   [10 10 10]]
+  [[ 1  2  3]
+   [11 12 13]]
+  ```
+
+  - 역전파 때는 각 데이터의 역전파 값이 편향의 원소에 모여야 한다.
+
+  ```python
+  dY = np.array([[1,2,3],[4,5,6]])
+  print(dY)
+  dB = np.sum(dY, axis=0)
+  print(dB)
+
+  >>>
+  [[1 2 3]
+   [4 5 6]]
+  [5 7 9]
+  ```
+
+  - 순전파에서 편향은 각각의 데이터에 들어가게 되며 이는 '하나의 편향'을 모든 데이터가 공유하는 것이라고 할 수 있다.
+  - 그래서 역전파할 때는 편향이 손실함수에 미친 전체 영향을 구하려면 데이터 개수에 해당하는 만큼의 경로에서 오는 기울기를 합쳐야 한다.
+    - 그리고 axis=0은 세로로 더하는 것
+
+```python
+class Affine:
+  def __init__(self,W,b):
+    self.W=W
+    self.b=b
+    self.x=None
+    #가중치 편향과 매개변수의 미분
+    self.dW=None
+    self.db=None
+
+  def forward(self,x):
+    self.x=x
+    out=np.dot(x,self.W)+self.b
+    return out
+
+  def backward(self,dout):
+    dx=np.dot(dout,self.W.T) #넘파이 배열의 전치속성 T
+    self.dW=np.dot(self.x.T,dout)
+    self.db=np.sum(dout,axis=0)
+    return dx
+
+```
+
+### 5.6.3 Softmax-with-Loss 계층
+
+- 소프트맥스 함수는 입력 값을 정규화(출력의 합이 1이 되도록 변형)하려 출력한다. 손글씨 숫자 인식에서의 Softmax 계층의 출력은 다음과 같고, 손글씨 숫자가 10개니까 입력도 10개가 된다.
+
+![5-6-1](images/5-6-1.png)
+
+- 신경망에서는 학습과 추론을 둘 다 하는데
+  - 추론할 때는 가장 높은 점수만 알면 되기 때문에 소프트맥스 함수를 거치기 전(정규화 되지 않은 상태)의 점수만 알아도 되고,
+  - 다만 신경망을 학습할 때에는 소프트맥스 함수가 필요하다.
+
+- Softmax-with-Loss 계층의 계산 그래프
+  ![5-6-2](images/5-6-2.png)
+
+- 간소화하면 다음과 같다.
+  ![5-6-3](images/5-6-3.png)
+
+- Softmax 계층
+  - 입력(a1,a2,a3)을 정규화하여 (y1,y2,y3)를 출력한다.
+- Cross Entropy Error 계층
+  - Softmax의 출력과 정답레이블을 받고 이 데이터로 부터 손실 L을 출력(출력과 정답의 차분)
+  - 역전파에서는 이 오차가 앞 계층에 전해지게 된다.
+
+```python
+class SoftmaxWithLoss:
+  def __init__(self):
+    self.loss=None
+    self.y=None
+    self.t=None
+
+  def forward(self,x,t):
+    self.t=t
+    self.y=softmax(x)
+    self.loss=crosss_entropy_error(self.y,self.t)
+
+    return self.loss
+
+  def backward(self,dout=1):
+    batch_size=self.t.shape[0]
+    if self.t.size==self.y.size:
+      dx= (self.y-self.t)/batch_size
+    else:
+      dx=self.y.copy()
+      dx[np.arange(batch_size),self.t]-=1
+      dx=dx/batch_size
+
+    return dx
+```
+
+- 역전파 때는 전파하는 값을 배치의 수로 나눠서 데이터 1개당 오차를 앞 계층으로 전파한다.
