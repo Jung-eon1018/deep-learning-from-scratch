@@ -357,3 +357,222 @@ class SoftmaxWithLoss:
 ```
 
 - 역전파 때는 전파하는 값을 배치의 수로 나눠서 데이터 1개당 오차를 앞 계층으로 전파한다.
+
+## 5.7 오차역전파법 구현하기
+
+- 이번 절에서는 지금까지 구현한 계층을 조합해서 신경망을 구축한다.
+
+### 5.7.1 신경망 학습의 전체 그림
+
+- 신경망 학습의 순서
+
+- 전제
+  - 신경망에는 적응 가능한 가중치와 편향이 있고, 이 가중치와 편향을 훈련 데이터에 적응하도록 조정하는 과정을 '학습'이라고 한다.
+- 1단계 - 미니배치
+  - 훈련 데이터 중 일부를 무작위로 가져온다(미니배치) 그 미니배치의 손실함수 값을 줄이는 것이 목표이다.
+- 2단계 - 기울기 산출
+  - 미니배치의 손실 함수 값을 줄이기 위해 각 가중치 매개변수의 기울기를 구한다. 기울기는 손실 함수의 값을 가장 작게 하는 방향을 제시, 여기서 오차역전파법이 등장하는 것이다.
+- 3단계 - 매개변수 갱신
+  - 가중치 매개변수를 기울기 방향으로 아주 조금 갱신한다.
+- 4단계 - 반복
+
+### 5.7.2 오차역전파법을 적용한 신경망 구현하기
+
+- 여기서는 2층 신경망을 TwoLayerNet 클래스로 구현한다.
+
+```python
+import sys, os
+sys.path.append(os.pardir)  #부모 디렉터리의 파일을 가져올 수 있도록 설정
+import numpy as np
+from common.layers import *
+from common.gradient import numerical_gradient
+from collections import OrderedDict
+
+class TwoLayerNet:
+
+  def __init__(self, input_size, hidden_size, output_size, weight_init_std=0.01):
+        # 가중치 초기화
+        self.params = {}
+        self.params['W1'] = weight_init_std * np.random.randn(input_size, hidden_size)
+        self.params['b1'] = np.zeros(hidden_size)
+        self.params['W2'] = weight_init_std * np.random.randn(hidden_size, output_size)
+        self.params['b2'] = np.zeros(output_size)
+
+        # 계층 생성
+        self.layers = OrderedDict()
+        #신경망의 계층을 OrderedDict에 보관한다. 이는 순서가 있는 딕셔너리라서 딕셔너리에 추가한 순서를 기억한다.
+        self.layers['Affine1'] = Affine(self.params['W1'], self.params['b1'])
+        self.layers['Relu1'] = Relu()
+        self.layers['Affine2'] = Affine(self.params['W2'], self.params['b2'])
+
+        self.lastLayer = SoftmaxWithLoss()
+
+  def predict(self,x):
+    for layer in self.layers.values():
+      x=layer.forward(x)
+      # 순전파 때는 추가한 순서대로 각 계층의 forward() 메서드를 호출하면 처리가 완료된다.
+
+    return x
+
+  def loss(self,x,t):
+    y=self.predict(x)
+
+    return self.lastLayer.forward(y,t)
+
+  def accuracy(self,x,t):
+    y=self.predict(x)
+    y=np.argmax(y,axis=1)
+    if t.ndim != 1 : t=np.argmax(t,axis=1)
+
+    accuracy = np.sum(y==t)/float(x.shape[0])
+    return accuracy
+
+  def numerical_gradient(self,x,t):
+    loss_W = lambda W: self.loss(x,t)
+
+    grads = {}
+    grads['W1'] = numerical_gradient(loss_W, self.params['W1'])
+    grads['b1'] = numerical_gradient(loss_W, self.params['b1'])
+    grads['W2'] = numerical_gradient(loss_W, self.params['W2'])
+    grads['b2'] = numerical_gradient(loss_W, self.params['b2'])
+
+    return grads
+
+  def gradient(self,x,t):
+    self.loss(x,t)
+
+    dout = 1
+    dout = self.lastLayer.backward(dout)
+
+    layers = list(self.layers.values())
+    layers.reverse()
+    #역전파 때는 계층을 반대로 호출하기만 하면 된다.
+
+    for layer in layers:
+      dout = layer.backward(dout)
+
+    grads = {}
+    grads['W1'], grads['b1'] = self.layers['Affine1'].dW, self.layers['Affine1'].db
+    grads['W2'], grads['b2'] = self.layers['Affine2'].dW, self.layers['Affine2'].db
+
+    return grads
+
+```
+
+- Affine 계층과 ReLU 계층이 각자 내부에서 순전파와 역전파를 제대로 처리하고 있으니 여기서는 그냥 계층을 올바른 순서대로 연결한다음 순서대로 호출해 주기만 하면 된다.
+- 이처럼 계층을 모듈화해서 구현한다면 단순히 필요한 만큼 계층을 더 추가하면 되기 때문에 편리하다.
+
+### 5.7.3 오차역전파법으로 구현 기울기 검증하기
+
+- 앞서 말했듯이 기울기를 구하는 방법은 두가지이다.
+  - 수치 미분
+  - 해석적으로 수식을 풀어 구하는 방법(오차역전파법), 이는 매개변수가 많아도 효율적으로 계산 가능
+
+- 이제부터는 비교적 빠른 오차역전파법을 사용한다.
+  - 수치 미분은 오차역전파법을 제대로 구현해두면 필요없지만
+  - 오차역전파법을 정확히 구현했는지 확인하기 위해 필요하다.
+
+- 수치 미분은 구현하기 쉽다는 이점이 있으며 그렇기 때문에 버그가 숨어있기 어렵다.
+- 하지만 오차역전파법은 구현하기 복잡하기 때문에 종종 실수를 하곤 한다.
+  - 그래서 수치 미분의 결과와 오차역전파법의 결과를 비교하여 오차역전파법을 제대로 구현했는지 검증한다.
+  - 이를 기울기 확인이라고 한다.
+
+```python
+import sys, os
+sys.path.append(os.pardir)  # 부모 디렉터리의 파일을 가져올 수 있도록 설정
+import numpy as np
+from dataset.mnist import load_mnist
+from two_layer_net import TwoLayerNet
+
+(x_train, t_train),(x_test,t_test) = load_mnist(normaliz=True,one_hot_label=True)
+
+network = TwoLayerNet(input_size=784,hidden_size=50,output_size=10)
+
+x_batch = x_train[:3]
+t_batch = t_train[:3]
+
+grad_numerical = network.numerical_gradient(x_batch, t_batch)
+grad_backprop = network.gradient(x_batch, t_batch)
+
+for key in grad_numerical.keys():
+    diff = np.average(np.abs(grad_backprop[key]-grad_numerical[key]))
+    print(key+":"+str(diff))
+
+```
+
+- 가장 먼저 mnist 데이터셋을 읽고 훈련 데이터 일부를 수치 미분으로 구한 기울기와 오차역전파법으로 구한 기울기의 오차를 확인한다.
+  - 여기에서는 각 가중치 매개변수의 차이의 절대값을 구하고, 이를 평균한 값이 오차가 된다.
+
+- 결과가 다음과 같이 나온다.
+
+```python
+W1:4.776667786377981e-10
+b1:2.878415981464981e-09
+W2:5.33318360614366e-09
+b2:1.402352762733261e-07
+```
+
+- 이 결과는 수치 미분과 오차역전파법으로 구한 기울기의 차이가 매우 작다는 것을 말해준다.
+  - 이로써 오차역전파법으로 구한 기울기가 올바름이 드러나는 것이다.
+
+### 5.7.4 오차역전파법을 사용한 학습 구현하기
+
+- 기울기를 오차역전파법으로 구현한 신경망 학습을 구현한 코드이다.
+
+```python
+import sys, os
+sys.path.append(os.pardir)
+
+import numpy as np
+from dataset.mnist import load_mnist
+from two_layer_net import TwoLayerNet
+
+# 데이터 읽기
+(x_train, t_train), (x_test, t_test) = load_mnist(normalize=True, one_hot_label=True)
+
+network = TwoLayerNet(input_size=784, hidden_size=50, output_size=10)
+
+iters_num = 10000
+train_size = x_train.shape[0]
+batch_size = 100
+learning_rate = 0.1
+
+train_loss_list = []
+train_acc_list = []
+test_acc_list = []
+
+iter_per_epoch = max(train_size / batch_size, 1)
+
+for i in range(iters_num):
+    batch_mask = np.random.choice(train_size, batch_size)
+    x_batch = x_train[batch_mask]
+    t_batch = t_train[batch_mask]
+
+    # 기울기 계산
+    #grad = network.numerical_gradient(x_batch, t_batch) # 수치 미분 방식
+    grad = network.gradient(x_batch, t_batch) # 오차역전파법 방식(훨씬 빠르다)
+
+    # 갱신
+    for key in ('W1', 'b1', 'W2', 'b2'):
+        network.params[key] -= learning_rate * grad[key]
+
+    loss = network.loss(x_batch, t_batch)
+    train_loss_list.append(loss)
+
+    if i % iter_per_epoch == 0:
+        train_acc = network.accuracy(x_train, t_train)
+        test_acc = network.accuracy(x_test, t_test)
+        train_acc_list.append(train_acc)
+        test_acc_list.append(test_acc)
+        print(train_acc, test_acc)
+```
+
+## 5.8 정리
+
+- 이번 장에서는 계산그래프부터 시작해서
+  - 이를 이용하여 신경망의 동작과 오차역전파법을 설명했다.
+  - 그 처리 과정을 계층이라는 단위로 구현하였다.
+    - ReLU 계층, Softmax-with-Loss 계층, Affine 계층, Softmax 계층 등
+    - 모든 계층에서는 forward 순전파, backward 역전파 메서드를 구현한다.
+    - 이를 통해 가중치 매개변수의 기울기를 효율적으로 구할 수 있다.
+  - 이처럼 동작을 계층으로 '모듈화'한 덕분에 신경망에서 계층을 자유롭게 재조합하여 원하는 신경망을 쉽게 만들 수 있다.
